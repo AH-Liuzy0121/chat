@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>聊天室</title>
+    <style type="text/css"></style>
+    <script type="text/javascript" src="js/sockjs.min.js"></script>
+    <script type="text/javascript" src="js/stomp.min.js"></script>
+    <script type="text/javascript">
+        var UUID = "";
+        var stompClient = null;
+        
+        window.onload = function () {
+            //连接服务器
+            var socket = new SockJS("/endpoint");
+            stompClient = Stomp.over(socket);
+            //响应时间监听
+            stompClient.connect({},function (frame) {
+                //监听刷新当前登录用户列表
+                stompClient.subscribe("/refreshList",function (response) {
+                    //返回当前登录人数组
+                   var serverObj = JSON.parse(response.body);
+                   var nameArrStr = "";
+                   for(var i = 0; i < serverObj.length;i++){
+                       nameArrStr = nameArrStr + serverObj[i].name + "\n";
+                   }
+                   userList.value = nameArrStr;
+                });
+
+                //监听刷新聊天窗口
+                stompClient.subscribe("/refreshWindow",function (response) {
+                    ////返回当前登录人数组
+                    var serverObj = JSON.parse(response.body);
+                    var contentArea = document.getElementById("contentArea");
+                    var val = contentArea.value;
+                    var retuenText = serverObj.sendUser
+                                   + " " + serverObj.date + ":\n"
+                                   + " " + serverObj.content + "\n";
+                    contentArea.value = val + retuenText;
+                    contentArea.scrollTop = contentArea.scrollHeight;
+                });
+
+                //刷新当前登录用户列表
+                stompClient.send("/refreshList",{},{});
+            });
+
+            //键盘事件注册
+            document.onkeydown = function (event) {
+                //按住Ctrl+enter发送消息
+                if(window.event.ctrlKey && window.event.keyCode == 13){
+                    sendTalk();
+                }
+            };
+        }
+
+        //上线及下线
+        function upLine() {
+            var areaNameText = document.getElementById("areaNameText");
+            var upDownBtn = document.getElementById("upDownBtn");
+            var uuidLab = document.getElementById("uuidLab");
+            var userList = document.getElementById("userList");
+            if(areaNameText == ""){
+                alert("请输入用户名!");
+                return;
+            }
+            if(upDownBtn.value == "上线"){
+                upDownBtn.value = "下线";
+                areaNameText.readOnly = true;
+                UUID = getUUID();
+                uuidLab.innerText = UUID;
+
+                //上线以后,添加用户
+                var obj = new Object();
+                obj.uuid = UUID;
+                obj.name = areaNameText.value;
+                var json_data = JSON.stringify(obj);
+                stompClient.send("/upLine",{},json_data);
+            }else {
+                upDownBtn.value = "上线";
+                areaNameText.readOnly = false;
+
+                //下线完成，删除用户
+                var obj = new Object();
+                obj.uuid = UUID;
+                var json_data = JSON.stringify(obj);
+                stompClient.send("/downLine",{},json_data);
+                UUID = "";
+                uuidLab.innerText = UUID;
+            }
+        }
+
+        //发言
+        function sendTalk() {
+            var upDownBtn = document.getElementById("upDownBtn");
+            if(upDownBtn.value == "上线"){
+                alert("请先上线!");
+                return;
+            }
+            var userName = document.getElementById("areaNameText").value;
+            var sendContent = document.getElementById("sendContent");
+            var obj = new Object();
+            obj.sendUser = userName;
+            obj.content = sendContent.value;
+            var json_data = JSON.stringify(obj);
+            stompClient.send("/talk",{},json_data);
+            sendContent = "";
+            sendContent.focus();
+        }
+
+        //浏览器关闭事件，删除用户信息
+        window.onbeforeunload = onbeforeunload_handler;
+        function onbeforeunload_handler() {
+            //用户下线删除用户信息
+            var obj = new Object();
+            obj.uuid = UUID;
+            var json_data = JSON.stringify(obj);
+            stompClient.send("/downLine",{},json_data);
+        }
+
+        //生成UUID
+        function getUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,
+                function(c) {
+                    var r = Math.random() * 16 | 0, v = c == 'x' ? r
+                        : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+        }
+    </script>
+</head>
+<body style="">
+    <table border="1" style="width:50%;height:600px;border-color:#00B7FF;margin:0 auto">
+        <tr height="40px">
+            <td>
+                当前登录人：<input id="areaNameText" type="text" width="400px" height="100%"/>
+                           <input id="upDownBtn" type="button" value="上线" onclick="upLine()"/>
+                           <label id="uuidLab"></label>
+            </td>
+        </tr>
+        <tr>
+            <td colspan="3">
+                <textarea id="contentArea" name="contentArea" disabled="disabled"
+                          style="width:100%;height:370px;padding:0px;margin:0px;"></textarea>
+            </td>
+            <td rowspan="3" width="150px">
+                <textarea id="userList" name="userList" disabled="disabled"
+                          style="width:100%;height:565px;padding:0px;margin:0px;"></textarea>
+            </td>
+        </tr>
+        <tr height="150px">
+            <td colspan="3">
+                <textarea id="sendContent" style="width:100%;height:140px;padding:0px;margin:0px;"></textarea>
+            </td>
+        </tr>
+        <tr height="40px">
+            <td colspan="2"></td>
+            <td width="80px" style="padding: 0px">
+                <input type="button" onclick="sendTalk()" value="发送"
+                       style="width:100%;height:40px;margin:0px;border:0px;padding:0px;"/>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
